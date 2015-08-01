@@ -11,9 +11,8 @@ Upload to your Arduino boadr the program at onArduino folder.
 
 Use by terminal the commands in onPHP folder.
 
+```
 ./initi2c /dev/ttyUSB0
-
 ./rdi2c ...
-
 ./wri2c ...
-
+```
