@@ -1,0 +1,226 @@
+#!/usr/bin/php5
+<?php
+
+function i2cRead($H,$cto=false) {
+	for ($i = 0; $i<60; $i++) {
+		usleep(100000);
+		$li = fgets($H,64);
+		if ($li!==false) return trim($li,"\t\r\n");
+		}
+	if ($cto) return false;
+	echo "Device I/O Timeout!\n";
+	exit(3);
+	}
+
+function i2cCmd($H,$cmd,$cto=false) {
+	global $par;
+	if (isset($par['v'])) echo ">\"$cmd\"\n";
+	fwrite($H,$cmd);
+	fflush($H);
+	$x= i2cRead($H,$cto);
+	if (isset($par['v'])) echo "<\"$x\"\n";
+	return $x;
+	}
+
+function Error($st) {
+	echo $st;
+	exit(5);
+	}
+
+function Help() {
+	echo "wri2c [-v] [-q] [-r] -e <eeprom> [-i <inputfile>]\n";
+	echo "       -d <device> [-b <offset>] [-a <eepromid>] [-M]\n";
+	echo "wri2c -d <device> -e <eeprom> -C\n";
+	echo "wri2c --fmt\n";
+	echo "\nWrite i2c EEPROM via arduino from binary file.\nParameters:\n";
+	echo "  -v\tVerbose.\n";
+	echo "  -q\tQuiet (Disable output messages and progression bar).\n";
+	echo "  -r\tDo not initialize the device.\n";
+	echo "  -i\tSet the input file.\n";
+	echo "  -d\tSet the device (eg. /dev/ttyUSB0 )\n";
+	echo "  -b\tSet the offset into the EEPROM\n"; 
+	echo "  -e\tSet the EEPROM type by chipset (eg. AT24C02).\n";
+	echo "  -D\tLoad the complete dump of EEPROM (-e required).\n";
+	echo "  -a\tSet the EEPROM ID into the i2c bus (see chip ID pins).\n";
+	echo "  -F\tBlink arduino led before write.\n";
+	echo "  -C\tClear EEPROM\n";
+	echo "  -M\tDon't set serial port mode.\n";
+	echo "  --fmt\tList the supported ics.\n\n";
+	echo "Example:\nrdi2c -d /dev/ttyUSB0 -o file.dump -D -e at24c256\n";
+	echo "Warning:\n\tThe file will resized by 16 bytes blocks and\n";
+	echo "\tpadded with 0xff bytes.\n\n";
+	exit;
+	}
+$SPEED=57600;
+
+$types = array(
+	'00'	=>	array('0000',16),
+	'01'	=>	array('0001',128),
+	'02'	=>	array('0002',256),
+	'04'	=>	array('0004',512),
+	'08'	=>	array('0008',1024),
+	'16'	=>	array('0016',2048),
+	'32'	=>	array('0032',4096),
+	'64'	=>	array('0064',8192),
+	'65'	=>	array('0064',8192),
+	'128'	=>	array('0128',16384),
+	'256'	=>	array('0256',32768),
+	'512'	=>	array('0512',65536),
+	'1024'	=>	array('1024',131072))
+	;
+
+$par = getopt("vqre:i:d:b:Da:FMC",array('fmt'));
+
+if (!isset($par['q'])) echo "\nrdi2c i2c EEPROM Writer V1.0\n\tCopyright (C) 2015 by mes3hacklab (License GPLv3)\n\n";
+
+if (@$argv[1]=='-?' or count($argv)==1) Help();
+
+if (isset($par['fmt'])) {
+	foreach($types as $k => $v) echo '  '.str_pad("24C$k",16,' ')." Size {$v[1]}\t bytes\n";
+	exit;
+	}
+
+if (!isset($par['i']) and !isset($par['C'])) Error("Missing input file -i\n");
+
+if (!@$par['d']) Error("Parameter -d required.\n");
+if (!isset($par['e'])) Error("Parameter -e required.\n");
+
+if (isset($par['e'])) {
+	$x = $par['e'];
+	if (preg_match('/^[a-z0-9]{5,8}$/i',$x)==0) Error("Invalid chipset.\n");
+	if (preg_match('/^[a-z]{0,2}24[l]{0,1}c(?<t>[0-9]{2,4})/i',$x,$z)==0) Error("Unknown chipset.\n");
+	$x=$z['t'];
+	if (!isset($types[$x])) Error("Unsupported chipset.\n");
+	$eType=$types[$x];
+	$par['l'] = $eType[1];
+	} else $eType=false;
+
+if (isset($par['D'])) {
+	if ($eType===false) Error("Parameter -e required.\n");
+	$par['b']=0;
+	$par['l']=$eType[1];
+	}
+
+if (isset($par['i']) and isset($par['C'])) Error("Invalid parameters: -i + -C\n");
+if (isset($par['C'])) {
+	if (!$eType) Error("Parameter -e required\n");
+	$eeprom = str_pad('',$eType[1],chr(255));
+	$WORD="Clear";
+	} else {
+	$WORD="Upload";
+	$eeprom = @file_get_contents($par['i']);
+	if ($eeprom===false) Error("Can't read input file: {$par['i']}\n");
+	}
+
+$par['d'] = $par['d'] ? $par['d'] : '/dev/ttyUSB0';
+
+if (!file_exists($par['d'])) Error("No device output `{$par['d']}`\n");
+
+if (!isset($par['r']) and !isset($par['M'])) {
+	exec("stty -F ".escapeshellarg($par['d'])." cs8 $SPEED ignbrk -brkint -icrnl -icrnl -imaxbel -opost -onlcr -isig -icanon -iexten -echo -echoe -echok -echoctl -echoke noflsh -ixon -crtscts");
+	}
+
+$I = fopen($par['d'] ,'r+');
+if ($I === false) Error("Device I/O Error\n");
+if (!@$par['b']) $par['b']=0; else $par['b'] = intval($par['b'])&65535;
+$oldst='';
+if (!isset($par['r'])) {
+	
+	for ($i = 0; $i<5 ; $i++) {
+		if (!isset($par['q']) and !isset($par['v']))  {
+			$oldst=" Initialize i2c .".str_repeat('.',$i);
+			echo $oldst;
+		}
+		if (isset($par['F'])) {
+			$li = i2cCmd($I,'E4');
+			}
+		
+		$li = i2cCmd($I,'V',true);
+		if (!isset($par['q']) and !isset($par['v']))  {
+			echo str_pad('',strlen($oldst),chr(8));
+			echo str_pad('',strlen($oldst),' ');
+			echo str_pad('',strlen($oldst),chr(8));
+		}
+		if ($li!==false) break;
+	}
+	
+	if ($li===false) {
+		fclose($I);
+		Error("Device I/O Timeout\n");
+		}
+	
+	if (!isset($par['q']) and !isset($par['v'])) echo " Initialize i2c Ok\n";
+	
+	if (strpos($li,'I2CE')!==0) {
+		fclose($I);
+		Error(
+			"Invalid device. ID = `$li`\n".
+			"\tYou must use this script with i2cShell on Arduino board.\n".
+			"\tCheck your hardware and firmware/Arduino program.\n\n")
+			;
+		}
+
+	if ($eType) {
+		$li=i2cCmd($I,'C'.$eType[0]);
+		if ($li!='K') Error("Device setType error\n");
+		}
+		
+	if (isset($par['a'])) {
+		$x=intval($par['a']);
+		if ($x<0 or $x>7) Error("Invalid EEPROM id `$x`\n");
+		$x=''.$x;
+		$li=i2cCmd($I,'I'.$x[0]);
+		if ($li!='K') Error("Device EEPROM id error\n");
+		}
+		
+	}
+
+$len = strlen($eeprom);
+if ($eType and $len>$eType[1]) Error("File too big.\n");
+$mpag = $len>>4;
+if ($len&15) $mpag++;
+$eeprom = str_pad($eeprom,$mpag<<4,chr(255),STR_PAD_RIGHT);
+$totl=0;
+$datl=0;
+$oldst='';
+$sz=0;
+
+for ($pag = 0 ; $pag < $mpag; $pag++ ) {
+	$cmd = "W".str_pad( dechex($par['b'] + ($pag<<4)) ,4,'0',STR_PAD_LEFT).'0';
+	$bp = $pag<<4;
+	for ($i=0;$i<16;$i++) {
+		$cmd.=str_pad( dechex( ord(@$eeprom[$bp++])) ,2,'0',STR_PAD_LEFT);
+		}
+	
+	if (!isset($par['v']) and !isset($par['q'])) {
+		echo str_pad('',strlen($oldst),chr(8));
+		$oldst=str_pad('',intval(10 * ($pag / $mpag)),'=',STR_PAD_LEFT);
+		$oldst=
+				" {$WORD}ing ... ".str_pad($datl<<4,6,' ',STR_PAD_LEFT)." bytes ".
+				str_pad(intval(100* ($pag / $mpag))."%",4,' ',STR_PAD_LEFT).
+				" [".str_pad($oldst,10,' ').'] ... ';
+		echo $oldst;
+		}
+	
+	$li = i2cCmd($I,$cmd);
+	if ($li=='K') $datl++;
+	$totl++;
+	}
+
+$ok = $totl == $datl;
+
+if (!isset($par['q'])) {
+	if (!isset($par['v'])) {
+		echo str_pad('',strlen($oldst),chr(8));
+		echo str_pad('',strlen($oldst),' ');
+		echo str_pad('',strlen($oldst),chr(8));
+		echo " {$WORD}ed ".($datl<<4)." bytes ";
+		}
+	if ($ok) echo "Ok\n"; else echo "Incomplete!\n";
+	if (!isset($par['v'])) echo "\n";
+	}
+
+fclose($I);
+if (!$ok) exit(2);
+exit(0);
+?>

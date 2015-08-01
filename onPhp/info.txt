@@ -1,0 +1,24 @@
+V		Versione
+D pppp		Dump pagine 16 bytes
+
+A aaaa llll	Dump ASCII
+		llll = 0 end con CR/\0
+S aaaa llll	Write ASCII
+		llll = 0 end con CR/\0
+F aaaa llll $	= con $ endchar
+
+I llll		Formatta
+
+
+Z aaaa		Imposta indirizzo
+L (32 Hex)	Scrive 16 byte
+M ab		Modalità EEPROM
+		b = Ic Address
+		a = Long address
+		0xff Reset.
+
+R aaaa l	Legge
+W aaaa l	Scrive
+
+E x		Led
+

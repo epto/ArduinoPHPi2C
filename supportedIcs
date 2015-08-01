@@ -1,0 +1,14 @@
+List of supported i2c EEPROM ic:
+  24C00            Size 16	 bytes
+  24C01            Size 128	 bytes
+  24C02            Size 256	 bytes
+  24C04            Size 512	 bytes
+  24C08            Size 1024	 bytes
+  24C16            Size 2048	 bytes
+  24C32            Size 4096	 bytes
+  24C64            Size 8192	 bytes
+  24C65            Size 8192	 bytes
+  24C128           Size 16384	 bytes
+  24C256           Size 32768	 bytes
+  24C512           Size 65536	 bytes
+  24C1024          Size 131072	 bytes

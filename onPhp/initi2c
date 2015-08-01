@@ -1,0 +1,10 @@
+#!/bin/bash
+
+if [ "$1" == "" ]; then
+	echo "Device required"
+	echo "Use:"
+	echo "initi2c /dev/ttyUSB0"
+	exit
+fi;
+
+stty -F $1 cs8 57600 ignbrk -brkint -icrnl -icrnl -imaxbel -opost -onlcr -isig -icanon -iexten -echo -echoe -echok -echoctl -echoke noflsh -ixon -crtscts
